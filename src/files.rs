@@ -18,11 +18,6 @@ impl Widget for FilesWidget<'_> {
     where
         Self: Sized,
     {
-        buf.set_string(
-            area.left(),
-            area.top(),
-            format!("Another counter: {}", self.model.counter()),
-            Style::default(),
-        );
+        buf.set_string(area.left(), area.top(), format!("state: {:?}", self.model.state), Style::default());
     }
 }

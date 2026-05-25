@@ -1,40 +1,30 @@
 use crate::config::Configuration;
 use crate::files::FilesWidget;
-use crate::model::{DeTuiModel, DeTuiState};
+use crate::model::DeTuiModel;
+use crate::shell::Shell;
 use crate::stats::StatsWidget;
+use ratatui::crossterm::event::{Event, KeyEventKind};
+use ratatui::crossterm::event;
 use ratatui::layout::{Constraint, Layout};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders};
 use ratatui::{DefaultTerminal, Frame};
 use std::io;
 use std::time::Duration;
-use ratatui::crossterm::event;
-use ratatui::crossterm::event::{Event, KeyCode, KeyEventKind};
-use crate::model::DeTuiMessage;
+use tui_term::widget::PseudoTerminal;
 
-#[derive(Debug)]
 pub struct DeTuiApp {
-    config: Configuration,
     model: DeTuiModel,
 }
 
 impl DeTuiApp {
-    pub fn new(config: Configuration) -> Self {
-        Self {
-            model: DeTuiModel::new(),
-            config,
-        }
-    }
-}
-
-impl DeTuiApp {
-    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        while !matches!(self.model.state, DeTuiState::Exiting) {
-            terminal.draw(|f| self.draw(f))?;
-            if let Some(message) = self.handle_events()? {
-                if let Some(model) = self.model.handle_message(message) {
-                    self.model = model;
-                }
-            }
+    pub fn run(configuration: Configuration, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        let main_area = terminal.get_frame().area();
+        let shell = Shell::new(&configuration, main_area.height, main_area.width * 3 / 4);
+        let model = DeTuiModel::new(configuration, shell);
+        let mut app = DeTuiApp { model };
+        while app.model.is_running() {
+            terminal.draw(|f| app.draw(f))?;
+            app.handle_events()?;
         }
         Ok(())
     }
@@ -42,10 +32,17 @@ impl DeTuiApp {
     fn draw(&mut self, frame: &mut Frame) {
         let stats = StatsWidget::new(&self.model);
         let files = FilesWidget::new(&self.model);
-        let main = Paragraph::new("");
+        let parser = self.model.shell.parser();
+        let main = PseudoTerminal::new(parser.screen());
 
-        let [sidebar_area, main_outer] = frame.area().layout(&Layout::horizontal([Constraint::Ratio(1, 4), Constraint::Fill(1)]));
-        let [stats_outer, files_outer] = sidebar_area.layout(&Layout::vertical([Constraint::Length(stats.lines()), Constraint::Fill(1)]));
+        let [sidebar_area, main_outer] = frame.area().layout(&Layout::horizontal([
+            Constraint::Ratio(1, 4),
+            Constraint::Fill(1),
+        ]));
+        let [stats_outer, files_outer] = sidebar_area.layout(&Layout::vertical([
+            Constraint::Length(stats.lines() + 1),
+            Constraint::Fill(1),
+        ]));
 
         let stats_block = Block::default().borders(Borders::TOP).title("Stats");
         let stats_inner = stats_block.inner(stats_outer);
@@ -63,20 +60,17 @@ impl DeTuiApp {
         frame.render_widget(main, main_inner);
     }
 
-    fn handle_events(&mut self) -> io::Result<Option<DeTuiMessage>> {
-        let poll_result = event::poll(Duration::from_millis(100))?;
-        if !poll_result { return Ok(None); }
-
-        match event::read()? {
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                match key_event.code {
-                    KeyCode::Char('q') => Ok(Some(DeTuiMessage::Exit)),
-                    KeyCode::Char('i') | KeyCode::Up => Ok(Some(DeTuiMessage::Increment)),
-                    KeyCode::Char('d') | KeyCode::Down => Ok(Some(DeTuiMessage::Decrement)),
-                    _ => Ok(None),
-                }
-            },
-            _ => Ok(None),
+    fn handle_events(&mut self) -> io::Result<()> {
+        let poll_result = event::poll(Duration::from_millis(10))?;
+        if !poll_result {
+            return Ok(());
         }
+
+        if let Event::Key(key_event) = event::read()?
+            && key_event.kind == KeyEventKind::Press
+        {
+            self.model.handle_key(key_event.code, key_event.modifiers);
+        }
+        Ok(())
     }
 }

@@ -3,7 +3,6 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::{Style, Widget};
 
-#[derive(Debug)]
 pub struct StatsWidget<'a> {
     model: &'a DeTuiModel,
 }
@@ -21,6 +20,9 @@ impl Widget for StatsWidget<'_> {
     where
         Self: Sized
     {
-        buf.set_string(area.left(), area.top(), format!("Counter: {}", self.model.counter()), Style::default());
+        buf.set_string(area.left(), area.top() + 0, "statistic 0", Style::default());
+        buf.set_string(area.left(), area.top() + 1, "statistic 1", Style::default());
+        buf.set_string(area.left(), area.top() + 2, "statistic 2", Style::default());
+        buf.set_string(area.left(), area.top() + 3, "statistic 3", Style::default());
     }
 }

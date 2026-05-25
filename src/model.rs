@@ -1,67 +1,45 @@
-#[derive(Debug)]
+use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+use crate::config::Configuration;
+use crate::shell::Shell;
+
 pub struct DeTuiModel {
-    pub(crate) state: DeTuiState,
-    counter: usize,
+    pub state: DeTuiState,
+    configuration: Configuration,
+    pub shell: Shell,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum DeTuiState {
-    Running,
     Exiting,
-}
-
-pub enum DeTuiMessage {
-    Exit,
-    Increment,
-    Decrement,
+    Terminal,
+    Control,
+    Files,
 }
 
 impl DeTuiModel {
-    pub fn new() -> Self {
+    pub fn new(configuration: Configuration, shell: Shell) -> Self {
         Self {
-            state: DeTuiState::Running,
-            counter: 0,
+            state: DeTuiState::Terminal,
+            configuration,
+            shell,
         }
     }
 
-    pub fn counter(&self) -> usize {
-        self.counter
+    pub fn is_running(&self) -> bool {
+        !matches!(self.state, DeTuiState::Exiting)
     }
 
-    fn exit(&self) -> Option<Self> {
-        Some(Self {
-            state: DeTuiState::Exiting,
-            counter: self.counter,
-        })
-    }
-
-    fn incr(&self) -> Option<Self> {
-        if self.counter == 100 {
-            None
-        } else {
-            Some(Self {
-                state: self.state,
-                counter: self.counter + 1,
-            })
-        }
-    }
-
-    fn decr(&self) -> Option<Self> {
-        if self.counter == 0 {
-            None
-        } else {
-            Some(Self {
-                state: self.state,
-                counter: self.counter - 1,
-            })
-        }
-    }
-
-    pub fn handle_message(&self, message: DeTuiMessage) -> Option<Self> {
-        match message {
-            DeTuiMessage::Exit => self.exit(),
-            DeTuiMessage::Increment => self.incr(),
-            DeTuiMessage::Decrement => self.decr(),
-        }
+    pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        self.state = match (self.state, code, modifiers) {
+            (_, KeyCode::Char('z'), KeyModifiers::CONTROL) => DeTuiState::Control,
+            (DeTuiState::Control, KeyCode::Char('q'), _) => DeTuiState::Exiting,
+            (DeTuiState::Control, KeyCode::Char('t'), _) => DeTuiState::Terminal,
+            (DeTuiState::Control, KeyCode::Char('f'), _) => DeTuiState::Files,
+            (DeTuiState::Terminal, _, _) => {
+                self.shell.handle_key(code, modifiers);
+                DeTuiState::Terminal
+            }
+            _ => self.state,
+        };
     }
 }
