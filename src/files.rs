@@ -1,7 +1,7 @@
 use crate::model::DeTuiModel;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::prelude::{Style, Widget};
+use ratatui::prelude::Widget;
 
 pub struct FilesWidget<'a> {
     model: &'a DeTuiModel,
@@ -18,6 +18,5 @@ impl Widget for FilesWidget<'_> {
     where
         Self: Sized,
     {
-        buf.set_string(area.left(), area.top(), format!("state: {:?}", self.model.state), Style::default());
     }
 }

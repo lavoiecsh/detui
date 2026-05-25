@@ -1,10 +1,9 @@
 use crate::config::Configuration;
 use crate::files::FilesWidget;
 use crate::model::DeTuiModel;
-use crate::shell::Shell;
 use crate::stats::StatsWidget;
-use ratatui::crossterm::event::{Event, KeyEventKind};
 use ratatui::crossterm::event;
+use ratatui::crossterm::event::{Event, KeyEventKind};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::widgets::{Block, Borders};
 use ratatui::{DefaultTerminal, Frame};
@@ -19,8 +18,7 @@ pub struct DeTuiApp {
 impl DeTuiApp {
     pub fn run(configuration: Configuration, terminal: &mut DefaultTerminal) -> io::Result<()> {
         let main_area = terminal.get_frame().area();
-        let shell = Shell::new(&configuration, main_area.height, main_area.width * 3 / 4);
-        let model = DeTuiModel::new(configuration, shell);
+        let model = DeTuiModel::new(configuration, main_area)?;
         let mut app = DeTuiApp { model };
         while app.model.is_running() {
             terminal.draw(|f| app.draw(f))?;
@@ -32,7 +30,7 @@ impl DeTuiApp {
     fn draw(&mut self, frame: &mut Frame) {
         let stats = StatsWidget::new(&self.model);
         let files = FilesWidget::new(&self.model);
-        let parser = self.model.shell.parser();
+        let parser = self.model.shell.parser.read().unwrap();
         let main = PseudoTerminal::new(parser.screen());
 
         let [sidebar_area, main_outer] = frame.area().layout(&Layout::horizontal([
