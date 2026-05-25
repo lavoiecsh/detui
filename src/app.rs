@@ -1,6 +1,6 @@
 use crate::config::Configuration;
 use crate::files::FilesWidget;
-use crate::model::DeTuiModel;
+use crate::model::{DeTuiMainState, DeTuiModel};
 use crate::stats::StatsWidget;
 use ratatui::crossterm::event;
 use ratatui::crossterm::event::{Event, KeyEventKind};
@@ -30,7 +30,10 @@ impl DeTuiApp {
     fn draw(&mut self, frame: &mut Frame) {
         let stats = StatsWidget::new(&self.model);
         let files = FilesWidget::new(&self.model);
-        let parser = self.model.shell.parser.read().unwrap();
+        let parser = match self.model.main_state {
+            DeTuiMainState::Terminal => self.model.shell.parser.read().unwrap(),
+            DeTuiMainState::Agent => self.model.agent.parser.read().unwrap(),
+        };
         let main = PseudoTerminal::new(parser.screen());
 
         let [sidebar_area, main_outer] = frame.area().layout(&Layout::horizontal([
@@ -52,7 +55,11 @@ impl DeTuiApp {
         frame.render_widget(files_block, files_outer);
         frame.render_widget(files, files_inner);
 
-        let main_block = Block::default().borders(Borders::LEFT).title("Main");
+        let main_title = match self.model.main_state {
+            DeTuiMainState::Terminal => "terminal",
+            DeTuiMainState::Agent => "agent",
+        };
+        let main_block = Block::default().borders(Borders::LEFT).title(main_title);
         let main_inner = main_block.inner(main_outer);
         frame.render_widget(main_block, main_outer);
         frame.render_widget(main, main_inner);

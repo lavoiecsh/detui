@@ -8,8 +8,10 @@ use std::{env, io};
 
 pub struct DeTuiModel {
     pub state: DeTuiState,
+    pub main_state: DeTuiMainState,
     pub configuration: Configuration,
     pub shell: Shell,
+    pub agent: Shell,
     pub base_directory: PathBuf,
     pub base_repository: String,
     pub base_branch: String,
@@ -19,8 +21,14 @@ pub struct DeTuiModel {
 pub enum DeTuiState {
     Exiting,
     Terminal,
+    Agent,
     Control,
     Files,
+}
+
+pub enum DeTuiMainState {
+    Terminal,
+    Agent,
 }
 
 impl DeTuiModel {
@@ -32,12 +40,16 @@ impl DeTuiModel {
         let base_branch = Command::new("git")
             .args(["branch", "--show-current"])
             .output()?;
+        let height = area.height - 1;
+        let width = area.width * 3 / 4;
 
         Ok(Self {
             state: DeTuiState::Terminal,
+            main_state: DeTuiMainState::Terminal,
             configuration,
             // todo! don't specify size here
-            shell: Shell::new(area.height, area.width * 3 / 4, &base_directory),
+            shell: Shell::new_default(height, width, &base_directory),
+            agent: Shell::new_agent(height, width, &base_directory),
             base_directory,
             base_repository: String::from_utf8_lossy(&base_repository.stdout).to_string(),
             base_branch: String::from_utf8_lossy(&base_branch.stdout).to_string(),
@@ -52,12 +64,23 @@ impl DeTuiModel {
         self.state = match (self.state, code, modifiers) {
             (_, KeyCode::Char('z'), KeyModifiers::CONTROL) => DeTuiState::Control,
             (DeTuiState::Control, KeyCode::Char('q'), _) => DeTuiState::Exiting,
-            (DeTuiState::Control, KeyCode::Char('t'), _) => DeTuiState::Terminal,
+            (DeTuiState::Control, KeyCode::Char('t'), _) => {
+                self.main_state = DeTuiMainState::Terminal;
+                DeTuiState::Terminal
+            },
+            (DeTuiState::Control, KeyCode::Char('a'), _) => {
+                self.main_state = DeTuiMainState::Agent;
+                DeTuiState::Agent
+            },
             (DeTuiState::Control, KeyCode::Char('f'), _) => DeTuiState::Files,
             (DeTuiState::Terminal, _, _) => {
                 self.shell.handle_key(code, modifiers);
                 DeTuiState::Terminal
             }
+            (DeTuiState::Agent, _, _) => {
+                self.agent.handle_key(code, modifiers);
+                DeTuiState::Agent
+            },
             _ => self.state,
         };
     }

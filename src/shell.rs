@@ -2,7 +2,7 @@ use bytes::Bytes;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc, RwLock};
+use std::sync::{Arc, RwLock, mpsc};
 use std::thread;
 use tui_term::vt100::Parser;
 
@@ -12,10 +12,20 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn new(rows: u16, cols: u16, cwd: &PathBuf) -> Self {
-        let pty_system = NativePtySystem::default();
+    pub fn new_agent(rows: u16, cols: u16, cwd: &PathBuf) -> Self {
+        let mut cmd = CommandBuilder::new("agent");
+        cmd.cwd(cwd);
+        Self::new(rows, cols, cmd)
+    }
+
+    pub fn new_default(rows: u16, cols: u16, cwd: &PathBuf) -> Self {
         let mut cmd = CommandBuilder::new_default_prog();
         cmd.cwd(cwd);
+        Self::new(rows, cols, cmd)
+    }
+
+    fn new(rows: u16, cols: u16, cmd: CommandBuilder) -> Self {
+        let pty_system = NativePtySystem::default();
         let pty_pair = pty_system
             .openpty(PtySize {
                 rows,
@@ -26,7 +36,10 @@ impl Shell {
             .unwrap();
 
         thread::spawn(move || {
-            pty_pair.slave.spawn_command(cmd).unwrap().wait().unwrap();
+            let result = pty_pair.slave.spawn_command(cmd);
+            if result.is_ok() {
+                result.unwrap().wait().unwrap();
+            }
             drop(pty_pair.slave);
         });
 
@@ -51,7 +64,7 @@ impl Shell {
             });
         }
 
-        let (tx,rx) = mpsc::channel::<Bytes>();
+        let (tx, rx) = mpsc::channel::<Bytes>();
 
         thread::spawn(move || {
             let mut writer = pty_pair.master.take_writer().unwrap();
@@ -61,10 +74,7 @@ impl Shell {
             drop(pty_pair.master);
         });
 
-        Self {
-            parser,
-            tx
-        }
+        Self { parser, tx }
     }
 
     pub fn handle_key(&self, code: KeyCode, modifiers: KeyModifiers) {
