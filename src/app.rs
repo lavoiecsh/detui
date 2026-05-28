@@ -1,81 +1,114 @@
+use crate::agent::Agent;
+use crate::component::{Component, DeTuiEvent};
 use crate::config::Configuration;
-use crate::files::FilesWidget;
-use crate::model::{DeTuiMainState, DeTuiModel};
-use crate::stats::StatsWidget;
-use ratatui::crossterm::event;
-use ratatui::crossterm::event::{Event, KeyEventKind};
-use ratatui::layout::{Constraint, Layout};
+use crate::files::Files;
+use crate::shell::Shell;
+use crate::stats::Stats;
+use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::widgets::{Block, Borders};
-use ratatui::{DefaultTerminal, Frame};
-use std::io;
-use std::time::Duration;
-use tui_term::widget::PseudoTerminal;
+use ratatui::Frame;
+use std::error::Error;
 
-pub struct DeTuiApp {
-    model: DeTuiModel,
+pub struct DeTuiApp<'a> {
+    configuration: Configuration,
+    state: DeTuiAppState,
+    main_state: DeTuiMainState,
+    stats: Stats,
+    files: Files,
+    shell: Shell,
+    agent: Agent<'a>,
 }
 
-impl DeTuiApp {
-    pub fn run(configuration: Configuration, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        let main_area = terminal.get_frame().area();
-        let model = DeTuiModel::new(configuration, main_area)?;
-        let mut app = DeTuiApp { model };
-        while app.model.is_running() {
-            terminal.draw(|f| app.draw(f))?;
-            app.handle_events()?;
-        }
-        Ok(())
+enum DeTuiAppState {
+    Exiting,
+    Control,
+    Files,
+    Shell,
+    Agent,
+}
+
+enum DeTuiMainState {
+    Shell,
+    Agent,
+}
+
+impl DeTuiAppState {
+    fn is_running(&self) -> bool {
+        !matches!(self, DeTuiAppState::Exiting)
+    }
+}
+
+impl DeTuiApp<'_> {
+    pub fn new(configuration: Configuration) -> Result<Self, Box<dyn Error>> {
+        Ok(Self {
+            state: DeTuiAppState::Shell,
+            main_state: DeTuiMainState::Shell,
+            stats: Stats::new()?,
+            files: Files::new(),
+            shell: Shell::new(&configuration),
+            agent: Agent::new(),
+            configuration,
+        })
     }
 
-    fn draw(&mut self, frame: &mut Frame) {
-        let stats = StatsWidget::new(&self.model);
-        let files = FilesWidget::new(&self.model);
-        let parser = match self.model.main_state {
-            DeTuiMainState::Terminal => self.model.shell.parser.read().unwrap(),
-            DeTuiMainState::Agent => self.model.agent.parser.read().unwrap(),
-        };
-        let main = PseudoTerminal::new(parser.screen());
+    pub fn is_running(&self) -> bool {
+        self.state.is_running()
+    }
+}
 
-        let [sidebar_area, main_outer] = frame.area().layout(&Layout::horizontal([
+impl Component for DeTuiApp<'_> {
+    fn handle_event(&mut self, event: DeTuiEvent) -> Option<DeTuiEvent> {
+        match event {
+            DeTuiEvent::Refresh => None,
+            DeTuiEvent::KeyPress(key_event) => {
+                match (&self.state, key_event.code, key_event.modifiers) {
+                    (_, KeyCode::Char('z'), KeyModifiers::CONTROL) => {
+                        self.state = DeTuiAppState::Control;
+                        None
+                    }
+                    (DeTuiAppState::Control, KeyCode::Char('q'), _) => {
+                        self.state = DeTuiAppState::Exiting;
+                        None
+                    }
+                    (DeTuiAppState::Control, KeyCode::Char('t'), _) => {
+                        self.state = DeTuiAppState::Shell;
+                        self.main_state = DeTuiMainState::Shell;
+                        None
+                    }
+                    (DeTuiAppState::Control, KeyCode::Char('a'), _) => {
+                        self.state = DeTuiAppState::Agent;
+                        self.main_state = DeTuiMainState::Agent;
+                        None
+                    }
+                    (DeTuiAppState::Control, KeyCode::Char('f'), _) => {
+                        self.state = DeTuiAppState::Files;
+                        None
+                    }
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    fn render(&self, frame: &mut Frame, area: Rect) {
+        let [sidebar_area, main_area] = area.layout(&Layout::horizontal([
             Constraint::Ratio(1, 4),
             Constraint::Fill(1),
         ]));
-        let [stats_outer, files_outer] = sidebar_area.layout(&Layout::vertical([
-            Constraint::Length(stats.lines() + 1),
+
+        let block = Block::default().borders(Borders::RIGHT);
+        frame.render_widget(&block, sidebar_area);
+        let [stats_area, files_area] = block.inner(sidebar_area).layout(&Layout::vertical([
+            Constraint::Length(self.stats.lines()),
             Constraint::Fill(1),
         ]));
+        self.stats.render(frame, stats_area);
+        self.files.render(frame, files_area);
 
-        let stats_block = Block::default().borders(Borders::TOP).title("Stats");
-        let stats_inner = stats_block.inner(stats_outer);
-        frame.render_widget(stats_block, stats_outer);
-        frame.render_widget(stats, stats_inner);
-
-        let files_block = Block::default().borders(Borders::TOP).title("Files");
-        let files_inner = files_block.inner(files_outer);
-        frame.render_widget(files_block, files_outer);
-        frame.render_widget(files, files_inner);
-
-        let main_title = match self.model.main_state {
-            DeTuiMainState::Terminal => "terminal",
-            DeTuiMainState::Agent => "agent",
-        };
-        let main_block = Block::default().borders(Borders::LEFT).title(main_title);
-        let main_inner = main_block.inner(main_outer);
-        frame.render_widget(main_block, main_outer);
-        frame.render_widget(main, main_inner);
-    }
-
-    fn handle_events(&mut self) -> io::Result<()> {
-        let poll_result = event::poll(Duration::from_millis(10))?;
-        if !poll_result {
-            return Ok(());
+        match self.main_state {
+            DeTuiMainState::Shell => self.shell.render(frame, main_area),
+            DeTuiMainState::Agent => self.agent.render(frame, main_area),
         }
-
-        if let Event::Key(key_event) = event::read()?
-            && key_event.kind == KeyEventKind::Press
-        {
-            self.model.handle_key(key_event.code, key_event.modifiers);
-        }
-        Ok(())
     }
 }

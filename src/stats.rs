@@ -1,49 +1,57 @@
-use crate::model::DeTuiModel;
-use ratatui::buffer::Buffer;
+use crate::component::Component;
 use ratatui::layout::Rect;
-use ratatui::prelude::{Style, Widget};
+use ratatui::prelude::Style;
+use ratatui::Frame;
+use std::error::Error;
+use std::process::Command;
+use ratatui::widgets::{Block, Borders};
 
-pub struct StatsWidget<'a> {
-    model: &'a DeTuiModel,
+pub struct Stats {
+    repository: String,
+    branch: String,
 }
 
-impl<'a> StatsWidget<'a> {
-    pub fn new(model: &'a DeTuiModel) -> Self {
-        StatsWidget { model }
+impl<'a> Stats {
+    pub fn new() -> Result<Self, Box<dyn Error>> {
+        let repository = String::from_utf8(
+            Command::new("gh")
+                .args(["repo", "view", "--json", "name", "-q", ".name"])
+                .output()?
+                .stdout,
+        )?;
+        let branch = String::from_utf8(
+            Command::new("git")
+                .args(["branch", "--show-current"])
+                .output()?
+                .stdout
+        )?;
+        Ok(Stats {
+            repository,
+            branch,
+        })
     }
 
     pub fn lines(&self) -> u16 {
-        4
+        2 + 1
     }
 }
 
-impl Widget for StatsWidget<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer)
-    where
-        Self: Sized,
-    {
+impl Component for Stats {
+    fn render(&self, frame: &mut Frame, area: Rect) {
+        let block = Block::default().borders(Borders::TOP).title("Stats");
+        frame.render_widget(&block, area);
+        let buf = frame.buffer_mut();
+
         buf.set_string(
-            area.left(),
-            area.top() + 0,
-            format!("state : {:?}", self.model.state),
+            block.inner(area).left(),
+            block.inner(area).top() + 0,
+            format!("repo  : {}", self.repository),
             Style::default(),
         );
         buf.set_string(
-            area.left(),
-            area.top() + 1,
-            format!("dir   : {:?}", self.model.base_directory),
-            Style::default(),
-        );
-        buf.set_string(
-            area.left(),
-            area.top() + 2,
-            format!("repo  : {}", self.model.base_repository),
-            Style::default(),
-        );
-        buf.set_string(
-            area.left(),
-            area.top() + 3,
-            format!("branch: {}", self.model.base_branch),
+            block.inner(area).left(),
+            block.inner(area).top() + 1,
+            format!("branch: {}", self.branch),
             Style::default(),
         );
     }

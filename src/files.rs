@@ -1,22 +1,18 @@
-use crate::model::DeTuiModel;
-use ratatui::buffer::Buffer;
+use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::prelude::Widget;
+use ratatui::widgets::{Block, Borders};
+use crate::component::Component;
 
-pub struct FilesWidget<'a> {
-    model: &'a DeTuiModel,
-}
+pub struct Files {}
 
-impl<'a> FilesWidget<'a> {
-    pub fn new(model: &'a DeTuiModel) -> Self {
-        FilesWidget { model }
+impl Files {
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
-impl Widget for FilesWidget<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer)
-    where
-        Self: Sized,
-    {
+impl Component for Files {
+    fn render(&self, frame: &mut Frame, area: Rect) {
+        frame.render_widget(Block::default().borders(Borders::TOP).title("Files"), area);
     }
 }
